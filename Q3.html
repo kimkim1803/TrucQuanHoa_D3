@@ -1,0 +1,99 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <script src="https://d3js.org/d3.v7.min.js"></script>
+    <style>
+        body { font-family: Arial, sans-serif; display: flex; justify-content: center; align-items: center; height: 100vh; margin: 0; }
+        .bar:hover { fill: rgb(20, 17, 35); }
+        .tooltip {
+            position: absolute;
+            background: rgb(229, 224, 224);
+            padding: 5px;
+            border: 1px solid #ccc;
+            border-radius: 5px;
+            display: none;
+            pointer-events: none;
+            font-size: 11px;
+        }
+    </style>
+</head>
+<body>
+    <div>
+        <h2 style="text-align: center; color: teal;">Doanh số bán hàng theo Tháng</h2>
+        <svg width="950" height="500"></svg>
+        <div class="tooltip"></div>
+    </div>
+    <script>
+        d3.csv("221124029104.csv").then(function(data) {
+            let monthlySales = d3.rollup(data,
+                v => d3.sum(v, d => +d["Thành tiền"]),
+                d => new Date(d["Thời gian tạo đơn"]).getMonth() + 1
+            );
+
+            let salesArray = Array.from(monthlySales, ([month, sales]) => ({ month, sales }));
+            salesArray.sort((a, b) => a.month - b.month);
+
+            let svg = d3.select("svg"),
+                margin = { top: 10, right: 30, bottom: 50, left: 80 },
+                width = +svg.attr("width") - margin.left - margin.right,
+                height = +svg.attr("height") - margin.top - margin.bottom,
+                g = svg.append("g").attr("transform", `translate(${margin.left},${margin.top})`);
+
+            let x = d3.scaleBand()
+                .domain(salesArray.map(d => `Tháng ${d.month}`))
+                .range([0, width])
+                .padding(0.2);
+
+            let y = d3.scaleLinear()
+                .domain([0, d3.max(salesArray, d => d.sales)])
+                .nice()
+                .range([height, 0]);
+
+            g.append("g")
+                .attr("transform", `translate(0,${height})`)
+                .call(d3.axisBottom(x));
+
+            g.append("g")
+                .call(d3.axisLeft(y).tickFormat(d => `${d / 1e6} M`));
+
+            let tooltip = d3.select(".tooltip");
+            let colors = d3.scaleOrdinal(d3.schemeCategory10);
+
+            let bars = g.selectAll(".bar")
+                .data(salesArray)
+                .enter().append("rect")
+                .attr("class", "bar")
+                .attr("x", d => x(`Tháng ${d.month}`))
+                .attr("y", d => y(d.sales))
+                .attr("height", d => height - y(d.sales))
+                .attr("width", x.bandwidth())
+                .attr("fill", (d, i) => colors(i))
+                .on("mouseover", function (event, d) {
+                    tooltip.style("display", "block")
+                        .html(`Tháng ${d.month}<br>Doanh số: ${d.sales.toLocaleString()} VND`)
+                        .style("left", (event.pageX + 10) + "px")
+                        .style("top", (event.pageY - 20) + "px");
+                })
+                .on("mousemove", function (event) {
+                    tooltip.style("left", (event.pageX + 10) + "px")
+                        .style("top", (event.pageY - 20) + "px");
+                })
+                .on("mouseout", function () {
+                    tooltip.style("display", "none");
+                });
+
+            g.selectAll(".label")
+                .data(salesArray)
+                .enter().append("text")
+                .attr("class", "label")
+                .attr("x", d => x(`Tháng ${d.month}`) + x.bandwidth() / 2)
+                .attr("y", d => y(d.sales) - 10)
+                .attr("text-anchor", "middle")
+                .attr("fill", "black")
+                .attr("font-size", "10px")
+                .text(d => (d.sales / 1e6).toFixed(0) + " triệu VND");
+        });
+    </script>
+</body>
+</html>

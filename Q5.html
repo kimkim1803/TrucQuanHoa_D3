@@ -1,0 +1,145 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <script src="https://d3js.org/d3.v6.min.js"></script>
+    <style>
+        body { font-family: Arial, sans-serif; }
+        .bar:hover { fill: rgb(104, 165, 165); }
+        .tooltip {
+            position: absolute;
+            background-color: rgb(255, 255, 255);
+            border: 1px solid #ddd;
+            padding: 8px 12px;
+            font-size: 14px;
+            border-radius: 5px;
+            box-shadow: 0 2px 5px rgba(0, 0, 0, 0.3);
+            pointer-events: none;
+            visibility: hidden;
+        }
+    </style>
+</head>
+<body>
+
+    <h2 style="text-align: center; color: teal;">Doanh số bán hàng trung bình theo Ngày trong tháng</h2>
+    <div id="chart" style="display: flex; justify-content: center;"></div>
+    <div class="tooltip"></div>
+
+    <script>
+        // Kích thước biểu đồ
+        const margin = {top: 40, right: 40, bottom: 80, left: 80},
+                width = 1000 - margin.left - margin.right,
+                height = 500 - margin.top - margin.bottom;
+
+        // Append SVG
+        const svg = d3.select("#chart")
+            .append("svg")
+            .attr("width", width + margin.left + margin.right)
+            .attr("height", height + margin.top + margin.bottom)
+            .append("g")
+            .attr("transform", `translate(${margin.left},${margin.top})`);
+
+        // Tooltip
+        const tooltip = d3.select(".tooltip");
+
+        // Load dữ liệu từ CSV
+        d3.csv("221124029104.csv").then(function(data) {
+            // Chuyển đổi dữ liệu
+            data.forEach(d => {
+                d["Thời gian tạo đơn"] = new Date(d["Thời gian tạo đơn"]);
+                d["SL"] = +d["SL"];
+                d["Thành tiền"] = +d["Thành tiền"];
+            });
+
+            // Nhóm dữ liệu theo ngày trong tháng
+            let groupedData = d3.group(data, d => d["Thời gian tạo đơn"].getDate());
+
+            let result = [];
+            groupedData.forEach((values, key) => {
+                let totalDoanhSo = d3.sum(values, d => d["Thành tiền"]);
+                let uniqueDates = new Set(values.map(d => d["Thời gian tạo đơn"].toDateString())).size;
+
+                result.push({
+                    "Ngày": `Ngày ${String(key).padStart(2, '0')}`,
+                    "Doanh số TB": totalDoanhSo / uniqueDates / 1_000_000
+                });
+            });
+
+            // Sắp xếp theo ngày trong tháng
+            result.sort((a, b) => parseInt(a["Ngày"].split(" ")[1]) - parseInt(b["Ngày"].split(" ")[1]));
+
+            // Thiết lập scale
+            const x = d3.scaleBand()
+                .domain(result.map(d => d["Ngày"]))
+                .range([0, width])
+                .padding(0.2);
+
+            const y = d3.scaleLinear()
+                .domain([0, d3.max(result, d => d["Doanh số TB"])]).nice()
+                .range([height, 0]);
+
+            // Tạo scale màu với 31 màu khác nhau
+            const colorScale = d3.scaleSequential()
+                .domain([1, 31])
+                .interpolator(d3.interpolateRainbow);
+
+            // Vẽ trục X
+            svg.append("g")
+                .attr("transform", `translate(0,${height})`)
+                .call(d3.axisBottom(x).tickSize(0))
+                .selectAll("text")
+                .attr("transform", "rotate(-45)")
+                .style("text-anchor", "end")
+                .style("font-size", "12px");
+
+            // Vẽ trục Y
+            svg.append("g")
+                .call(d3.axisLeft(y).tickFormat(d => d + "M"))
+                .style("font-size", "12px");
+
+            // Vẽ cột
+            svg.selectAll(".bar")
+                .data(result)
+                .enter()
+                .append("rect")
+                .attr("class", "bar")
+                .attr("x", d => x(d["Ngày"]))
+                .attr("y", d => y(d["Doanh số TB"]))
+                .attr("width", x.bandwidth())
+                .attr("height", d => height - y(d["Doanh số TB"]))
+                .attr("fill", d => colorScale(parseInt(d["Ngày"].split(" ")[1]))) // Màu sắc khác nhau
+                .on("mouseover", function(event, d) {
+                    tooltip.style("visibility", "visible")
+                            .html(`<strong>Ngày trong tháng:</strong> ${d["Ngày"]}<br>
+                                    <strong>Doanh số bán TB:</strong> ${d["Doanh số TB"].toFixed(2)} triệu VND`)
+                            .style("left", (event.pageX + 10) + "px")
+                            .style("top", (event.pageY - 10) + "px");
+
+                    d3.select(this).attr("fill", "orange");
+                })
+                .on("mousemove", function(event) {
+                    tooltip.style("left", (event.pageX + 10) + "px")
+                            .style("top", (event.pageY - 10) + "px");
+                })
+                .on("mouseout", function(event, d) {
+                    tooltip.style("visibility", "hidden");
+                    d3.select(this).attr("fill", colorScale(parseInt(d["Ngày"].split(" ")[1])));
+                });
+
+            // Hiển thị giá trị trên cột
+            svg.selectAll(".label")
+                .data(result)
+                .enter()
+                .append("text")
+                .attr("class", "label")
+                .attr("x", d => x(d["Ngày"]) + x.bandwidth() / 2)
+                .attr("y", d => y(d["Doanh số TB"]) - 5)
+                .attr("text-anchor", "middle")
+                .text(d => d["Doanh số TB"].toFixed(1) + " tr")
+                .style("fill", "gray")
+                .style("font-size", "10px");
+        });
+    </script>
+
+</body>
+</html>

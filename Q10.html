@@ -1,0 +1,197 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <script src="https://d3js.org/d3.v7.min.js"></script>
+    <style>
+        body { 
+            font-family: Arial, sans-serif;
+            padding: 20px;
+        }
+        #charts {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 10px;
+            max-width: 950px;
+        }
+        .chart-container {
+            background: white;
+            padding: 10px;
+            border-radius: 10px;
+            box-shadow: 2px 2px 10px rgba(0,0,0,0.1);
+            text-align: center;
+        }
+        .tooltip {
+            position: absolute;
+            background: white;
+            border: 1px solid #ccc;
+            padding: 5px;
+            font-size: 14px;
+            pointer-events: none;
+            display: none;
+        }
+        h3 {
+            color: teal;
+            margin-bottom: 10px;
+        }
+        .legend {
+            font-size: 10px;
+            font-weight: bold;
+        }
+    </style>
+</head>
+<body>
+    <h3 style="text-align:center; color: rgb(38, 99, 126); font-size: 18px; font-weight: bold;">
+        Xác suất bán hàng của Mặt hàng theo Nhóm hàng theo từng Tháng
+    </h3>
+    <div id="charts"></div>
+    <div class="tooltip" id="tooltip"></div>
+
+    <script>
+        d3.csv("221124029104.csv").then(data => {
+            console.log("Dữ liệu từ CSV:", data);
+
+            // Chuẩn hóa dữ liệu
+            data.forEach(d => {
+                d.Tháng = "T" + String(new Date(d["Thời gian tạo đơn"]).getMonth() + 1).padStart(2, "0");
+                d.NhomHang = `[${d["Mã nhóm hàng"]}] ${d["Tên nhóm hàng"]}`;
+                d.MatHang = `[${d["Mã mặt hàng"]}] ${d["Tên mặt hàng"]}`;
+            });
+
+            // Tính tổng số đơn hàng theo Tháng & Nhóm hàng
+            let donTheoNhomThang = d3.rollup(
+                data,
+                v => new Set(v.map(d => d["Mã đơn hàng"])).size,
+                d => d.Tháng,
+                d => d.NhomHang
+            );
+
+            // Tính tổng số đơn hàng theo Tháng & Mặt hàng
+            let processedData = d3.flatRollup(
+                data,
+                v => {
+                    let soDonHang = new Set(v.map(d => d["Mã đơn hàng"])).size;
+                    let tongDonHangNhom = donTheoNhomThang.get(v[0].Tháng)?.get(v[0].NhomHang) || 1;
+                    return {
+                        soDonHang,
+                        tongDonHangNhom,
+                        xacSuat: (soDonHang / tongDonHangNhom) * 100
+                    };
+                },
+                d => d.Tháng,
+                d => d.NhomHang,
+                d => d.MatHang
+            ).map(([Tháng, NhomHang, MatHang, values]) => ({ Tháng, NhomHang, MatHang, ...values }));
+
+            // Nhóm dữ liệu theo Nhóm hàng
+            const groups = d3.groups(processedData, d => d.NhomHang);
+
+            // Kích thước mỗi biểu đồ
+            const width = 380, height = 195;
+            const margin = { top: 10, right: 30, bottom: 40, left: 40 };
+
+            // Tạo một biểu đồ riêng cho mỗi Nhóm hàng
+            groups.forEach(([nhomHang, values]) => {
+                let container = d3.select("#charts")
+                    .append("div")
+                    .attr("class", "chart-container");
+
+                container.append("h3")
+                    .text(`${nhomHang}`)
+                    .style("font-size", "13px");
+
+                let svg = container.append("svg")
+                    .attr("width", width)
+                    .attr("height", height);
+
+                // Thang đo trục X (Tháng)
+                const x = d3.scaleBand()
+                    .domain([...new Set(values.map(d => d.Tháng))])
+                    .range([margin.left, width - margin.right])
+                    .padding(0.2);
+
+                // Xác định giá trị tối đa cho trục Y
+                let yMax = nhomHang.includes("Bột") ? 200 : d3.max(values, d => d.xacSuat);
+                
+                // Thang đo trục Y
+                const y = d3.scaleLinear()
+                    .domain([0, yMax])
+                    .nice()
+                    .range([height - margin.bottom, margin.top]);
+
+                // Thang màu
+                const colorScale = d3.scaleOrdinal(d3.schemeCategory10)
+                    .domain([...new Set(values.map(d => d.MatHang))]);
+
+                // Định nghĩa đường
+                const line = d3.line()
+                    .x(d => x(d.Tháng) + x.bandwidth() / 2)
+                    .y(d => y(d.xacSuat));
+
+                // Nhóm dữ liệu theo Mặt hàng trong Nhóm hàng
+                const subGroups = d3.groups(values, d => d.MatHang);
+
+                // Vẽ từng đường cho mỗi Mặt hàng
+                subGroups.forEach(([matHang, data]) => {
+                    svg.append("path")
+                        .datum(data)
+                        .attr("fill", "none")
+                        .attr("stroke", colorScale(matHang))
+                        .attr("stroke-width", 2)
+                        .attr("d", line);
+                });
+
+                // Tooltip
+                const tooltip = d3.select("#tooltip");
+
+                // Vẽ điểm trên đường
+                svg.selectAll("circle")
+                    .data(values)
+                    .enter().append("circle")
+                    .attr("cx", d => x(d.Tháng) + x.bandwidth() / 2)
+                    .attr("cy", d => y(d.xacSuat))
+                    .attr("r", 2)
+                    .attr("fill", d => colorScale(d.MatHang))
+                    .on("mouseover", (event, d) => {
+                        tooltip.style("display", "block")
+                            .html(`Tháng: ${d.Tháng}<br>Mặt hàng: ${d.MatHang}<br>Xác suất: ${d.xacSuat.toFixed(2)}%`)
+                            .style("left", (event.pageX + 10) + "px")
+                            .style("top", (event.pageY - 20) + "px");
+                    })
+                    .on("mouseout", () => tooltip.style("display", "none"));
+
+                // Trục X (Tháng)
+                svg.append("g")
+                    .attr("transform", `translate(0,${height - margin.bottom})`)
+                    .call(d3.axisBottom(x));
+
+                // Trục Y (Xác suất %)
+                svg.append("g")
+                    .attr("transform", `translate(${margin.left},0)`)
+                    .call(d3.axisLeft(y).tickFormat(d => d + "%"));
+
+                // Chú thích (Legend) DƯỚI BIỂU ĐỒ
+                const legend = svg.append("g")
+                    .attr("transform", `translate(${margin.left},${height - margin.bottom + 20})`);
+
+                subGroups.forEach(([matHang], i) => {
+                    const legendRow = legend.append("g")
+                        .attr("transform", `translate(${i * 100}, 0)`);
+
+                    legendRow.append("rect")
+                        .attr("width", 10)
+                        .attr("height", 10)
+                        .attr("fill", colorScale(matHang));
+
+                    legendRow.append("text")
+                        .attr("x", 10)
+                        .attr("y", 10)
+                        .text(matHang)
+                        .style("font-size", "7px")
+                        .attr("alignment-baseline", "middle");
+                });
+            });
+        });
+    </script>
+</body>
+</html>

@@ -1,0 +1,112 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Phân phối Lượt mua hàng</title>
+    <script src="https://d3js.org/d3.v7.min.js"></script>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            height: 100vh;
+            margin: 0;
+        }
+        .bar {
+            fill: #00b5a5;
+        }
+        .bar:hover {
+            fill: #008577;
+        }
+        .tooltip {
+            position: absolute;
+            background: white;
+            border: 1px solid #ddd;
+            padding: 5px;
+            font-size: 14px;
+            visibility: hidden;
+            box-shadow: 2px 2px 5px rgba(0, 0, 0, 0.3);
+        }
+    </style>
+</head>
+<body>
+    <h2 style="text-align: center; color: #00b5a5;">Phân phối Lượt mua hàng</h2>
+    <div style="display: flex; justify-content: center; width: 100%;">
+        <svg width="900" height="500"></svg>
+    </div>
+    <div class="tooltip"></div>
+    <script>
+        d3.csv("221124029104.csv").then(data => {
+            // Chuẩn hóa dữ liệu và đếm số lượt mua của từng khách hàng
+            let luotMua = d3.rollup(
+                data,
+                v => new Set(v.map(d => d["Mã đơn hàng"])).size,
+                d => d["Mã khách hàng"]
+            );
+            
+            // Chuyển đổi thành mảng để dễ xử lý
+            let luotMuaArray = Array.from(luotMua, ([key, value]) => ({ "Mã khách hàng": key, "Số lượt mua": value }));
+            
+            // Tính số lượng khách hàng theo số lượt mua
+            let phanPhoi = d3.rollup(
+                luotMuaArray,
+                v => v.length,
+                d => d["Số lượt mua"]
+            );
+            
+            // Chuyển đổi thành mảng để trực quan hóa
+            let dataProcessed = Array.from(phanPhoi, ([key, value]) => ({ "Số lượt mua": key, "Số khách hàng": value })).sort((a, b) => a["Số lượt mua"] - b["Số lượt mua"]);
+            
+            const margin = { top: 10, right: 30, bottom: 50, left: 50 };
+            const width = 900 - margin.left - margin.right;
+            const height = 500 - margin.top - margin.bottom;
+            
+            const svg = d3.select("svg")
+                .append("g")
+                .attr("transform", `translate(${margin.left},${margin.top})`);
+            
+            const x = d3.scaleBand()
+                .domain(dataProcessed.map(d => d["Số lượt mua"]))
+                .range([0, width])
+                .padding(0.2);
+            
+            const y = d3.scaleLinear()
+                .domain([0, d3.max(dataProcessed, d => d["Số khách hàng"])])
+                .nice()
+                .range([height, 0]);
+            
+            svg.append("g")
+                .attr("transform", `translate(0,${height})`)
+                .call(d3.axisBottom(x).tickSize(0).tickPadding(10));
+            
+            svg.append("g")
+                .call(d3.axisLeft(y));
+            
+            const tooltip = d3.select(".tooltip");
+            
+            svg.selectAll(".bar")
+                .data(dataProcessed)
+                .enter().append("rect")
+                .attr("class", "bar")
+                .attr("x", d => x(d["Số lượt mua"]))
+                .attr("y", d => y(d["Số khách hàng"]))
+                .attr("width", x.bandwidth())
+                .attr("height", d => height - y(d["Số khách hàng"]))
+                .on("mouseover", (event, d) => {
+                    tooltip.style("visibility", "visible")
+                            .text(`Số lượt mua: ${d["Số lượt mua"]}, Số khách hàng: ${d["Số khách hàng"]}`);
+                })
+                .on("mousemove", (event) => {
+                    tooltip.style("top", (event.pageY - 10) + "px")
+                            .style("left", (event.pageX + 10) + "px");
+                })
+                .on("mouseout", () => {
+                    tooltip.style("visibility", "hidden");
+                });
+        });
+    </script>
+</body>
+</html>

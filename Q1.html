@@ -1,0 +1,175 @@
+<!DOCTYPE html>
+<html lang="vi">
+
+<head>
+    <meta charset="UTF-8">
+    <script src="https://d3js.org/d3.v7.min.js"></script>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+        }
+
+        .bar {
+            stroke: black;
+            stroke-width: 1px;
+        }
+
+        .label {
+            font-size: 9px;
+            fill: black;
+        }
+
+        .tooltip {
+            position: absolute;
+            text-align: left;
+            padding: 8px;
+            background: rgba(0, 0, 0, 0.7);
+            color: #fff;
+            border-radius: 5px;
+            pointer-events: none;
+            font-size: 11px;
+        }
+    </style>
+</head>
+
+<body>
+    <h3 style="text-align:center; color: green; font-size: 23px; font-weight: bold;">Doanh số bán hàng theo Mặt hàng</h3>
+    <svg id="chart"></svg>
+    <div id="tooltip" class="tooltip" style="opacity: 0;"></div>
+
+    <script>
+        d3.csv("./221124029104.csv").then(function(data) {
+            console.log("Dữ liệu đã đọc:", data);
+
+            // Gộp dữ liệu
+            const aggregatedData = d3.rollups(
+                data,
+                v => ({
+                    TongThanhTien: d3.sum(v, d => +d["Thành tiền"]),
+                    TongSoLuong: d3.sum(v, d => +d["SL"]),
+                    MaNhomHang: v[0]["Mã nhóm hàng"],
+                    TenNhomHang: v[0]["Tên nhóm hàng"]
+                }),
+                d => `[${d["Mã mặt hàng"]}] ${d["Tên mặt hàng"]}`
+            );
+
+            // Chuyển thành mảng đối tượng
+            const processedData = aggregatedData.map(([MatHang, values]) => ({
+                MatHang,
+                TongThanhTien: values.TongThanhTien,
+                TongSoLuong: values.TongSoLuong,
+                MaNhomHang: values.MaNhomHang,
+                TenNhomHang: values.TenNhomHang
+            })).sort((a, b) => b.TongThanhTien - a.TongThanhTien);
+
+            // Kích thước
+            const width = 1200;
+            const height = Math.max(400, processedData.length * 25);
+            const margin = { top: 10, right: 200, bottom: 30, left: 200 };
+
+            const svg = d3.select("#chart")
+                .attr("width", width)
+                .attr("height", height);
+
+            // Trục
+            const x = d3.scaleLinear()
+                .domain([0, d3.max(processedData, d => d.TongThanhTien)])
+                .range([margin.left, width - margin.right]);
+
+            const y = d3.scaleBand()
+                .domain(processedData.map(d => d.MatHang))
+                .range([margin.top, height - margin.bottom])
+                .padding(0.3);
+
+            const colorScale = d3.scaleOrdinal()
+                .domain([...new Set(processedData.map(d => d.MaNhomHang))])
+                .range(d3.schemeSet2);
+
+            // Tooltip
+            const tooltip = d3.select("#tooltip");
+
+            // Trục X
+            svg.append("g")
+                .attr("transform", `translate(0,${height - margin.bottom})`)
+                .call(d3.axisBottom(x).ticks(5).tickFormat(d => Math.round(d / 1e6) + "M"));
+
+            // Trục Y
+            svg.append("g")
+                .attr("transform", `translate(${margin.left},0)`)
+                .call(d3.axisLeft(y));
+
+            // Vẽ cột và thêm tooltip
+            svg.selectAll(".bar")
+                .data(processedData)
+                .enter()
+                .append("rect")
+                .attr("class", "bar")
+                .attr("x", margin.left)
+                .attr("y", d => y(d.MatHang))
+                .attr("width", d => x(d.TongThanhTien) - margin.left)
+                .attr("height", y.bandwidth())
+                .attr("fill", d => colorScale(d.MaNhomHang))
+                .on("mouseover", function(event, d) {
+                    d3.select(this).attr("opacity", 0.7);
+                    tooltip.transition().duration(200).style("opacity", 1);
+                    tooltip.html(`
+                        <strong>Mặt hàng:</strong> ${d.MatHang}<br>
+                        <strong>Doanh số bán:</strong> ${Math.round(d.TongThanhTien).toLocaleString()} VND<br>
+                        <strong>Số lượng bán:</strong> ${Math.round(d.TongSoLuong).toLocaleString()} SKUs
+                    `)
+                        .style("left", (event.pageX + 15) + "px")
+                        .style("top", (event.pageY - 28) + "px");
+                })
+                .on("mouseout", function() {
+                    d3.select(this).attr("opacity", 1);
+                    tooltip.transition().duration(300).style("opacity", 0);
+                });
+
+            // Nhãn số trên cột
+            svg.selectAll(".label")
+                .data(processedData)
+                .enter()
+                .append("text")
+                .attr("class", "label")
+                .attr("x", d => x(d.TongThanhTien) + 5)
+                .attr("y", d => y(d.MatHang) + y.bandwidth() / 2)
+                .attr("dy", "0.35em")
+                .text(d => Math.round(d.TongThanhTien / 1e6) + " triệu VND");
+
+            // Tạo nhóm chú thích (legend)
+            const legend = svg.append("g")
+                .attr("transform", `translate(${width - margin.right + 70}, ${margin.top})`);
+            // Thêm tiêu đề "Nhóm hàng"
+            legend.append("text")
+            .attr("x", 10)
+            .attr("y", 0)
+            .text("Nhóm hàng")
+            .attr("font-size", "11px")
+            .attr("font-weight", "bold")
+            .attr("fill", "#555");
+
+            const legendItems = legend.selectAll(".legend-item")
+                .data(colorScale.domain())
+                .enter()
+                .append("g")
+                .attr("class", "legend-item")
+                .attr("transform", (d, i) => `translate(0, ${i * 25})`);
+
+            legendItems.append("circle")
+                .attr("cx", 10)
+                .attr("cy", 10)
+                .attr("r", 6)
+                .attr("fill", d => colorScale(d));
+
+            legendItems.append("text")
+                .attr("x", 25)
+                .attr("y", 14)
+                .text(d => `[${d}] ${processedData.find(item => item.MaNhomHang === d)?.TenNhomHang || ''}`)
+                .attr("font-size", "11px")
+                .attr("fill", "#555")
+                .attr("alignment-baseline", "middle");
+        });
+    </script>
+</body>
+
+</html>

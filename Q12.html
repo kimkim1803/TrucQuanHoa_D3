@@ -1,0 +1,121 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Phân phối Mức chi trả của Khách hàng</title>
+    <script src="https://d3js.org/d3.v6.min.js"></script>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            text-align: center;
+        }
+        svg {
+            width: 1000px;
+            height: 500px;
+        }
+        .bar {
+            fill: #2a4b7b;
+        }
+        .bar:hover {
+            fill: #45a049;
+        }
+        .axis-label {
+            font-size: 14px;
+        }
+        .tooltip {
+            position: absolute;
+            background: rgba(0, 0, 0, 0.7);
+            color: white;
+            padding: 6px;
+            border-radius: 4px;
+            font-size: 14px;
+            pointer-events: none;
+            display: none;
+        }
+    </style>
+</head>
+<body>
+    <h2 style="text-align:center; color: rgb(38, 99, 126); font-size: 18px; font-weight: bold;">
+        Phân phối Mức chi trả của Khách hàng
+    <h2>
+    <div id="chart-container">
+        <svg id="chart"></svg>
+    </div>
+    <div class="tooltip" id="tooltip"></div>
+
+    <script>
+        d3.csv("221124029104.csv").then(function(data) {
+            let spendData = d3.rollups(data, 
+                v => d3.sum(v, d => +d["Thành tiền"]), 
+                d => d["Mã khách hàng"]
+            ).map(d => ({ customer: d[0], amount: d[1] }));
+
+            // Nhóm dữ liệu theo khoảng giá trị (50K)
+            const binSize = 50000;
+            let binnedData = d3.rollups(spendData, 
+                v => v.length, 
+                d => Math.floor(d.amount / binSize) * binSize
+            ).map(d => ({ range: d[0], count: d[1] }));
+
+            binnedData.sort((a, b) => a.range - b.range);
+
+            // Kích thước đồ thị
+            const margin = { top: 10, right: 30, bottom: 100, left: 80 };
+            const width = 1000 - margin.left - margin.right;
+            const height = 550 - margin.top - margin.bottom;
+
+            const svg = d3.select("#chart")
+                            .attr("width", width + margin.left + margin.right)
+                            .attr("height", height + margin.top + margin.bottom)
+                            .append("g")
+                            .attr("transform", `translate(${margin.left}, ${margin.top})`);
+
+            const x = d3.scaleBand()
+                        .domain(binnedData.map(d => d.range))
+                        .range([0, width])
+                        .padding(0.3);
+
+            const y = d3.scaleLinear()
+                        .domain([0, d3.max(binnedData, d => d.count)])
+                        .nice()
+                        .range([height, 0]);
+
+            svg.append("g")
+            .attr("transform", `translate(0, ${height})`)
+            .call(d3.axisBottom(x).tickFormat(d => (d / 1000) + "K")) // Chia cho 1,000 và thêm "K"
+            .selectAll("text")
+            .attr("transform", "rotate(-45)")
+            .style("text-anchor", "end") // Căn chữ về cuối
+            .attr("dy", "0.5em") // Dịch xuống để tránh trục
+            .attr("dx", "-1em") // Dịch sang trái một chút
+            .style("font-size", "10px"); // Tăng kích thước chữ một chút để dễ nhìn hơn                    
+
+            svg.append("g").call(d3.axisLeft(y));
+
+            const tooltip = d3.select("#tooltip");
+
+            svg.selectAll(".bar")
+                .data(binnedData)
+                .enter()
+                .append("rect")
+                .attr("class", "bar")
+                .attr("x", d => x(d.range))
+                .attr("y", d => y(d.count))
+                .attr("width", x.bandwidth())
+                .attr("height", d => height - y(d.count))
+                .on("mouseover", (event, d) => {
+                    tooltip.style("display", "block")
+                            .html(`Chi tiêu từ ${d.range.toLocaleString()} - ${(d.range + binSize).toLocaleString()} VND</strong>: ${d.count} khách hàng`);
+                })
+                .on("mousemove", (event) => {
+                    tooltip.style("left", (event.pageX + 10) + "px")
+                            .style("top", (event.pageY - 20) + "px");
+                })
+                .on("mouseout", () => {
+                    tooltip.style("display", "none");
+                });
+        });
+    </script>
+</body>
+</html>

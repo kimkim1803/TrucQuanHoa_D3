@@ -1,0 +1,137 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <script src="https://d3js.org/d3.v7.min.js"></script>
+    <style>
+        body { font-family: Arial, sans-serif; text-align: center; }
+        .line { fill: none; stroke-width: 2px; }
+        .tooltip {
+            position: absolute;
+            text-align: left;
+            background: white;
+            border: 1px solid #ccc;
+            padding: 5px;
+            border-radius: 5px;
+            pointer-events: none;
+        }
+        h2 { color: teal; }
+        .axis-label { font-size: 14px; font-weight: bold; }
+        .legend {
+            font-size: 12px;
+            text-anchor: start;
+        }
+    </style>
+</head>
+<body>
+    <h2>Xác suất bán hàng của Nhóm hàng theo Tháng</h2>
+    <svg width="1000" height="500"></svg>
+    <div class="tooltip" style="display: none;"></div>
+    <script>
+        d3.csv("221124029104.csv").then(function(data) {
+            data.forEach(d => {
+                d.Tháng = `Tháng ${String(new Date(d["Thời gian tạo đơn"]).getMonth() + 1).padStart(2, '0')}`;
+                d["Mã đơn hàng"] = d["Mã đơn hàng"].trim();
+                d["Nhóm hàng"] = `[${d["Mã nhóm hàng"]}] ${d["Tên nhóm hàng"]}`;
+            });
+
+            let totalOrdersByMonth = d3.rollup(data, 
+                v => new Set(v.map(d => d["Mã đơn hàng"])).size, 
+                d => d.Tháng);
+
+            let groupedData = d3.rollups(data,
+                v => ({ 
+                    SoDonNhomHang: new Set(v.map(d => d["Mã đơn hàng"])).size,
+                    TotalOrders: totalOrdersByMonth.get(v[0].Tháng),
+                    XacSuat: new Set(v.map(d => d["Mã đơn hàng"])).size / totalOrdersByMonth.get(v[0].Tháng)
+                }),
+                d => d.Tháng,
+                d => d["Nhóm hàng"]
+            );
+
+            let chartData = [];
+            groupedData.forEach(([month, values]) => {
+                values.forEach(([nhomHang, stats]) => {
+                    chartData.push({
+                        Tháng: month,
+                        "Nhóm hàng": nhomHang,
+                        "Xác suất lượt mua": stats.XacSuat
+                    });
+                });
+            });
+
+            let width = 1000, height = 500;
+            let margin = { top: 50, right: 200, bottom: 50, left: 30 };
+            let svg = d3.select("svg")
+                .attr("width", width)
+                .attr("height", height)
+                .append("g")
+                .attr("transform", `translate(${margin.left}, ${margin.top})`);
+
+            let x = d3.scaleBand().domain(chartData.map(d => d.Tháng)).range([0, width - margin.left - margin.right]).padding(0.1);
+            let y = d3.scaleLinear().domain([0, 0.8]).range([height - margin.bottom - margin.top, 0]);
+            let color = d3.scaleOrdinal(d3.schemeCategory10);
+
+            let line = d3.line()
+                .x(d => x(d.Tháng) + x.bandwidth() / 2)
+                .y(d => y(d["Xác suất lượt mua"]));
+
+            let nested = d3.groups(chartData, d => d["Nhóm hàng"]);
+            let tooltip = d3.select(".tooltip");
+
+            svg.append("g")
+                .attr("transform", `translate(0, ${height - margin.bottom - margin.top})`)
+                .call(d3.axisBottom(x));
+
+            svg.append("g")
+                .call(d3.axisLeft(y).tickFormat(d => `${(d * 100).toFixed(0)}%`));
+
+            svg.selectAll(".line-group")
+                .data(nested)
+                .enter().append("g")
+                .append("path")
+                .attr("class", "line")
+                .attr("d", d => line(d[1]))
+                .attr("stroke", d => color(d[0]));
+
+            svg.selectAll(".dot")
+                .data(chartData)
+                .enter().append("circle")
+                .attr("cx", d => x(d.Tháng) + x.bandwidth() / 2)
+                .attr("cy", d => y(d["Xác suất lượt mua"]))
+                .attr("r", 4)
+                .attr("fill", d => color(d["Nhóm hàng"]))
+                .on("mouseover", (event, d) => {
+                    tooltip.style("display", "block")
+                        .html(`${d.Tháng}<br>${d["Nhóm hàng"]}: ${(d["Xác suất lượt mua"] * 100).toFixed(0)}%`)
+                        .style("left", (event.pageX + 10) + "px")
+                        .style("top", (event.pageY - 10) + "px");
+                })
+                .on("mouseout", () => tooltip.style("display", "none"));
+
+            let legend = svg.append("g")
+                .attr("transform", `translate(${width - margin.right}, 20)`);
+
+            legend.append("text")
+                .attr("x", 0)
+                .attr("y", -10)
+                .text("Nhóm hàng")
+                .attr("class", "legend")
+                .attr("font-weight", "bold");
+
+            nested.forEach(([nhomHang], i) => {
+                legend.append("circle")
+                    .attr("cx", 0)
+                    .attr("cy", i * 20)
+                    .attr("r", 5)
+                    .attr("fill", color(nhomHang));
+                legend.append("text")
+                    .attr("x", 10)
+                    .attr("y", i * 20 + 5)
+                    .text(nhomHang)
+                    .attr("class", "legend");
+            });
+        });
+    </script>
+</body>
+</html>
